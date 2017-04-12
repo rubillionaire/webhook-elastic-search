@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+
+require( 'dotenv' ).config()
+
+try {
+  var siteName =  process.argv[ 2 ]
+} catch ( error ) {
+  console.log( 'Pass in a site name whose results should be logged.' )
+  return;
+}
+
+var WebHookElasticSearch = require( '../index.js' )
+
+var search = WebHookElasticSearch( { host: process.env.ELASTIC_SEARCH_SERVER, username: process.env.ELASTIC_SEARCH_USER, password: process.env.ELASTIC_SEARCH_PASSWORD } )
+
+search.siteEntries( siteName, logResults )
+
+function logResults ( error, data ) {
+  if ( error ) console.log( error )
+  else console.log( data )
+}

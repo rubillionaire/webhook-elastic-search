@@ -1,0 +1,22 @@
+{
+  "name": "webhook-elastic-search",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/**/*.js",
+    "capture": "./bin/cli unique-cli-test.risd.systems"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "deep-equal": "^1.0.1",
+    "dotenv": "^4.0.0",
+    "elasticsearchclient": "^0.5.3",
+    "object-assign": "^4.1.1"
+  },
+  "devDependencies": {
+    "firebase": "^2.4.2",
+    "tape": "^4.6.3"
+  }
+}
