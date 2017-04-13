@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "firebase": "^2.4.2",
-    "tape": "^4.6.3"
+    "tape": "^4.6.3",
+    "webhook-site-data": "^1.0.0"
   }
 }
