@@ -11,13 +11,13 @@
   "license": "ISC",
   "dependencies": {
     "deep-equal": "^1.0.1",
-    "dotenv": "^4.0.0",
     "elasticsearchclient": "^0.5.3",
     "object-assign": "^4.1.1"
   },
   "devDependencies": {
     "firebase": "^2.4.2",
     "tape": "^4.6.3",
+    "dotenv": "^4.0.0",
     "webhook-site-data": "^1.0.0"
   }
 }
