@@ -4,8 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tape test/**/*.js",
-    "capture": "./bin/cli unique-cli-test.risd.systems"
+    "test": "tape test/**/*.js"
   },
   "author": "",
   "license": "ISC",
