@@ -1,4 +1,4 @@
-# webhook-elastc-search
+# webhook-elastic-search
 
 Interface for interacting with the Elastic Search that backs a Webhook system.
 
