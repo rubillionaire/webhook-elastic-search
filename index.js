@@ -1,4 +1,4 @@
-var ElasticSearchClient = require( 'elasticsearchclient' )
+var ElasticSearch = require( 'elasticsearch' )
 var deepEqual = require( 'deep-equal' )
 var objectAssign = require( 'object-assign' )
 
@@ -8,23 +8,22 @@ module.exports = WebHookElasticSearch;
  * @param {object} opts
  * @param {string} opts.host
  * @param {string} opts.port
- * @param {string} opts.username
- * @param {string} opts.password
+ * @param {string} opts.auth.username
+ * @param {string} opts.auth.password
  */
 function WebHookElasticSearch  ( opts ) {
   if ( ! ( this instanceof WebHookElasticSearch ) ) return new WebHookElasticSearch( opts )
   if ( !opts ) opts = {}
 
   var options = {
-    host: stripPort( stripHost( opts.host ) ),
-    port: opts.port || 9200,
-    auth: {
-      username: opts.username,
-      password: opts.password,
-    },
+    host: opts.host,
+    apiVersion: '6.6',
+    httpAuth: `${ opts.auth.username }:${ opts.auth.password }`,
   }
 
-  var elastic = new ElasticSearchClient( options )
+  var globalTypeName = '_doc'
+
+  var elastic = new ElasticSearch.Client( options )
 
   return {
     siteEntries: siteEntries,
@@ -50,9 +49,14 @@ function WebHookElasticSearch  ( opts ) {
 
     if ( commands.length === 0 ) return callback( null, [] )
 
-    return elastic.bulk(commands, function ( error, results ) {
+    return elastic.bulk( { body: commands }, function ( error, results ) {
        if ( error ) return callback( error )
-       else return callback( null, JSON.parse( results ) )
+       if ( typeof results === 'string' ) {
+         return callback( null, JSON.parse( results ) )
+       }
+       else {
+         return callback( null, results )
+       }
     } )
 
     function UpdateOrDeleteActions ( options ) {
@@ -96,7 +100,13 @@ function WebHookElasticSearch  ( opts ) {
         }
 
         function bulkDeleteAction () {
-          return [{ 'delete': { '_index': indexedItem._index, '_type': indexedItem._type, '_id': indexedItem._id } }]
+          return [{
+            'delete': {
+              '_index': indexedItem._index,
+              '_type': indexedItem._type,
+              '_id': indexedItem._id,
+            }
+          }]
         }
       }
 
@@ -110,21 +120,30 @@ function WebHookElasticSearch  ( opts ) {
         }
 
         function siteDataKeyComparison () {
+          // update, or do nothing by default.
+          // only update if you can successfully pull an item out of the site data
+          // object using the keys of the indexed item, and if their underlying
+          // data is the same. the item will update if the site data keys match
+          // that of that indexedItem's _source.doc key is different.
+          // If the indexedItem's keys ( ._id & ._source.contentType ) are not able
+          // to get an item from the site data tree, that case will be handled by the
+          // delete checking branch of for loop that called into this funciton.
           var needsUpdate = false;
-          // update, or do nothing by default
-          var indexableSiteDataItem = indexableDocumentForSiteData( siteDataForIndexedItem( indexedItem ) )
-          if ( indexedItem._type === indexedItem._id ) {
-            indexableSiteDataItem.__oneOff = true;
-          }
 
-          var indexedDocument = objectAssign( {}, indexedItem._source )
+          // indexedItem : { _id, _source: { doc: { name, ... }, contentType, oneOff } }
+          // indexableSiteData : { name, ... }
+          var indexableSiteDataItem = siteDataForIndexedItem( indexedItem )
 
-          if ( deepEqual( indexedDocument, indexableSiteDataItem ) ) {
+          if ( deepEqual( indexedItem._source.doc, indexableSiteDataItem ) ) {
             needsUpdate = false;
           }
           else {
             needsUpdate = true;
-            updateObject = objectAssign( {}, indexableSiteDataItem );
+            updateObject = {
+              doc: indexableSiteDataItem,
+              contentType: indexedItem._source.contentType,
+              oneOff: indexedItem._source.oneOff,
+            }
           }
 
           return needsUpdate;
@@ -132,9 +151,15 @@ function WebHookElasticSearch  ( opts ) {
 
 
         function bulkIndexAction () {
-          if ( typeof updateObject === 'undefined' ) return [];
+          if ( typeof updateObject !== 'object' ) return [];
 
-          var indexCommand = { 'index': { '_index': indexedItem._index, '_type': indexedItem._type, '_id': indexedItem._id } }
+          var indexCommand = {
+            'index': {
+              '_index': indexedItem._index,
+              '_type': globalTypeName,
+              '_id': indexedItem._id,
+            },
+          }
           return [ indexCommand, updateObject ]
         }
 
@@ -142,10 +167,10 @@ function WebHookElasticSearch  ( opts ) {
 
       function siteDataForIndexedItem ( indexedItem ) {
         try {
-          if ( indexedItem._type === indexedItem._id ) {
-            return siteData.data[ indexedItem._type ]
+          if ( indexedItem._source.oneOff === true ) {
+            return siteData.data[ indexedItem._source.contentType ]
           } else {
-            return siteData.data[ indexedItem._type ][ indexedItem._id ]  
+            return siteData.data[ indexedItem._source.contentType ][ indexedItem._id ]
           }
         } catch ( error ) {
           return undefined;
@@ -161,14 +186,14 @@ function WebHookElasticSearch  ( opts ) {
 
       var keySeperator = '!';
 
-      // siteData & siteIndex as arrays of _type!_id strings
+      // siteData & siteIndex as arrays of contentType!id strings
       var siteDataKeys = keysForSiteData( siteData )
       var siteIndexKeys = keysForSiteIndex( siteIndex )
 
       var actions = []
       for (var i = siteDataKeys.length - 1; i >= 0; i--) {
         // If the current site data key is not in the array of siteIndexKeys, push a create action
-        if ( siteIndexKeys.indexOf( siteDataKeys[i] ) === -1 ) actions.push( createActionFor( siteDataKeys[i] ) )
+        if ( siteIndexKeys.indexOf( siteDataKeys[i] ) === -1 ) actions.push( createActionFor( siteDataKeys[ i ] ) )
       }
 
       return actions;
@@ -177,15 +202,23 @@ function WebHookElasticSearch  ( opts ) {
         var splitKey = siteDataKey.split( keySeperator );
         var item_type = splitKey[ 0 ]
         var item_id = splitKey[ 1 ]
-        var createCommand = { 'index': { '_index': siteName, '_type': item_type, '_id': item_id  } }
-        var documentObject;
-        if ( item_type === item_id ) {
-          documentObject = siteData.data[ item_type ];
-          documentObject.__oneOff = true;
-        } else {
-          documentObject = siteData.data[ item_type ][ item_id ];
+        var createCommand = {
+          'index': {
+            '_index': siteName,
+            '_type': globalTypeName,
+            '_id': item_id,
+          }
         }
-        return [ createCommand, indexableDocumentForSiteData( documentObject ) ];
+        var sourceObject = { contentType: item_type }
+        if ( item_type === item_id ) {
+          sourceObject.doc = siteData.data[ item_type ]
+          sourceObject.oneOff = true;
+        } else {
+          sourceObject.doc = siteData.data[ item_type ][ item_id ]
+          sourceObject.oneOff = false;
+        }
+
+        return [ createCommand, sourceObject ];
       }
 
       function keysForSiteData( siteData ) {
@@ -210,70 +243,32 @@ function WebHookElasticSearch  ( opts ) {
       }
 
       function keyForIndexedItem ( indexedItem ) {
-        return keyForContentTypeItemId( indexedItem._type, indexedItem._id )
+        return keyForContentTypeItemId( indexedItem._source.contentType, indexedItem._id )
       }
 
       function keyForContentTypeItemId( contentType, itemId ) {
         return [ contentType, itemId ].join( keySeperator )
       }
     }
-
-    function indexableDocumentForSiteData ( item ) {
-      // indexed documents are stored with their object values stringified
-      var indexable = {};
-      Object.keys( item )
-        .forEach( function ( itemKey ) {
-
-          if ( item[ itemKey ] === null ) {
-            return;
-          }
-          else if ( typeof item[ itemKey ] === 'object' ) {
-            indexable[ itemKey ] = JSON.stringify( item[ itemKey ] )
-          }
-          else {
-            indexable[ itemKey ] = item[ itemKey ]
-          }
-
-        } )
-      return indexable;
-    }
-
   }
 
   function siteEntries ( siteName, callback ) {
     var options = {
-      size: 10000,
-      query: {
-        match_all: {}
-      }
+      index: siteName,
+      body: {
+        size: 10000,
+        query: {
+          match_all: {},
+        },
+      },
     }
 
-    // elastic.search
-    // all string arguments are passed in as the search path
-    // all object arugments are turned into query strings for search
-    // if the last argument is a function, its used as the callback
-    return elastic.search( siteName, options, function onResults ( error, results ) {
+    elastic.search( options, function onResults ( error, results ) {
       if ( error ) return callback( error );
-
-      try {
-        results = JSON.parse( results )
-      } catch ( error ) {
-        error.message = 'Could not JSON.parse search results.'
-        return callback( error )
-      }
 
       if ( !results.hits ) callback( null, [] )
       else callback( null, results.hits.hits )
 
     } )
   }
-
-  function stripHost ( server ) {
-    return server.replace( 'http://', '' ).replace( 'https://', '' )
-  }
-
-  function stripPort ( server ) {
-    return server.split( ':' )[ 0 ]
-  }
-
 }
