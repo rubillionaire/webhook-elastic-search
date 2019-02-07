@@ -16,15 +16,9 @@ function WebHookElasticSearch  ( opts ) {
   if ( !opts ) opts = {}
 
   var options = {
-    // host: stripPort( stripHost( opts.host ) ),
     host: opts.host,
-    // port: opts.port || 9200,
     apiVersion: '6.6',
     httpAuth: `${ opts.auth.username }:${ opts.auth.password }`,
-    // auth: {
-    //   username: opts.auth.username,
-    //   password: opts.auth.password,
-    // },
   }
 
   var globalTypeName = '_doc'
@@ -106,8 +100,6 @@ function WebHookElasticSearch  ( opts ) {
         }
 
         function bulkDeleteAction () {
-          console.log( 'delete' )
-          console.log( indexedItem._source.doc.name )
           return [{
             'delete': {
               '_index': indexedItem._index,
@@ -142,10 +134,6 @@ function WebHookElasticSearch  ( opts ) {
           // indexableSiteData : { name, ... }
           var indexableSiteDataItem = siteDataForIndexedItem( indexedItem )
 
-          // if ( indexedItem._source.oneOff === indexedItem._id ) {
-          //   indexableSiteDataItem.__oneOff = true;
-          // }
-
           if ( deepEqual( indexedItem._source.doc, indexableSiteDataItem ) ) {
             needsUpdate = false;
           }
@@ -157,14 +145,6 @@ function WebHookElasticSearch  ( opts ) {
               oneOff: indexedItem._source.oneOff,
             }
           }
-
-          console.log( 'needsUpdate' )
-          console.log( needsUpdate )
-          console.log( indexedItem._id )
-          console.log( 'indexedItem._source.doc' )
-          console.log( indexedItem._source.doc )
-          console.log( 'indexableSiteDataItem' )
-          console.log( indexableSiteDataItem )
 
           return needsUpdate;
         }
@@ -237,10 +217,6 @@ function WebHookElasticSearch  ( opts ) {
           sourceObject.doc = siteData.data[ item_type ][ item_id ]
           sourceObject.oneOff = false;
         }
-        
-        console.log( 'create-command' )
-        console.log( createCommand )
-        console.log( sourceObject )
 
         return [ createCommand, sourceObject ];
       }
@@ -274,29 +250,6 @@ function WebHookElasticSearch  ( opts ) {
         return [ contentType, itemId ].join( keySeperator )
       }
     }
-
-    // change: documents will be saved as pure objects, instead of objects
-    //         whose top level keys are maintained, and nested values stringified
-    // function indexableDocumentForSiteData ( item ) {
-    //   // indexed documents are stored with their object values stringified
-    //   var indexable = {};
-    //   Object.keys( item )
-    //     .forEach( function ( itemKey ) {
-
-    //       if ( item[ itemKey ] === null ) {
-    //         return;
-    //       }
-    //       else if ( typeof item[ itemKey ] === 'object' ) {
-    //         indexable[ itemKey ] = JSON.stringify( item[ itemKey ] )
-    //       }
-    //       else {
-    //         indexable[ itemKey ] = item[ itemKey ]
-    //       }
-
-    //     } )
-    //   return indexable;
-    // }
-
   }
 
   function siteEntries ( siteName, callback ) {
@@ -318,13 +271,4 @@ function WebHookElasticSearch  ( opts ) {
 
     } )
   }
-
-  // function stripHost ( server ) {
-  //   return server.replace( 'http://', '' ).replace( 'https://', '' )
-  // }
-
-  // function stripPort ( server ) {
-  //   return server.split( ':' )[ 0 ]
-  // }
-
 }
