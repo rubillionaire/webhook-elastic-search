@@ -49,7 +49,7 @@ function WebHookElasticSearch  ( opts ) {
 
     if ( commands.length === 0 ) return callback( null, [] )
 
-    return elastic.bulk( { body: commands }, function ( error, results ) {
+    return elastic.bulk( { body: commands, requestTimeout: 60000 }, function ( error, results ) {
        if ( error ) return callback( error )
        if ( typeof results === 'string' ) {
          return callback( null, JSON.parse( results ) )
@@ -261,6 +261,7 @@ function WebHookElasticSearch  ( opts ) {
           match_all: {},
         },
       },
+      size: 10000,
     }
 
     elastic.search( options, function onResults ( error, results ) {
