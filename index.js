@@ -261,7 +261,6 @@ function WebHookElasticSearch  ( opts ) {
           match_all: {},
         },
       },
-      size: 10000,
     }
 
     elastic.search( options, function onResults ( error, results ) {
