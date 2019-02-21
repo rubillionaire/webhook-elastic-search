@@ -49,7 +49,7 @@ function WebHookElasticSearch  ( opts ) {
 
     if ( commands.length === 0 ) return callback( null, [] )
 
-    return elastic.bulk( { body: commands, requestTimeout: 60000 }, function ( error, results ) {
+    return elastic.bulk( { body: commands, requestTimeout: 120000 }, function ( error, results ) {
        if ( error ) return callback( error )
        if ( typeof results === 'string' ) {
          return callback( null, JSON.parse( results ) )
@@ -140,7 +140,8 @@ function WebHookElasticSearch  ( opts ) {
           else {
             needsUpdate = true;
             updateObject = {
-              doc: indexableSiteDataItem,
+              doc: JSON.stringify( indexableSiteDataItem ),
+              name: indexableSiteDataItem.name,
               contentType: indexedItem._source.contentType,
               oneOff: indexedItem._source.oneOff,
             }
@@ -211,11 +212,13 @@ function WebHookElasticSearch  ( opts ) {
         }
         var sourceObject = { contentType: item_type }
         if ( item_type === item_id ) {
-          sourceObject.doc = siteData.data[ item_type ]
+          sourceObject.doc = JSON.stringify( siteData.data[ item_type ] )
           sourceObject.oneOff = true;
+          sourceObject.name = siteData.data[ item_type ].name;
         } else {
-          sourceObject.doc = siteData.data[ item_type ][ item_id ]
+          sourceObject.doc = JSON.stringify( siteData.data[ item_type ][ item_id ] )
           sourceObject.oneOff = false;
+          sourceObject.name = siteData.data[ item_type ][ item_id ].name;
         }
 
         return [ createCommand, sourceObject ];
