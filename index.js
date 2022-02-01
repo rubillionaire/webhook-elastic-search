@@ -26,8 +26,24 @@ function WebHookElasticSearch  ( opts ) {
   var elastic = new ElasticSearch.Client( options )
 
   return {
-    siteEntries: siteEntries,
-    updateIndex: updateIndex,
+    siteEntries,
+    updateIndex,
+    listIndicies,
+    createIndex,
+    deleteIndex,
+  }
+
+  function docFromObj (obj) {
+    const doc = {}
+    Object.keys(obj).forEach((key) => {
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+        doc[key] = JSON.stringify(obj[key])
+      }
+      else {
+        doc[key] = obj[key]
+      }
+    })
+    return doc
   }
 
   /**
@@ -60,7 +76,7 @@ function WebHookElasticSearch  ( opts ) {
     } )
 
     function UpdateOrDeleteActions ( options ) {
-      var siteName = options.siteName;
+      var siteName = unescapeFirebaseStr(options.siteName)
       var siteData = options.siteData;
       var siteIndex = options.siteIndex;
 
@@ -134,13 +150,13 @@ function WebHookElasticSearch  ( opts ) {
           // indexableSiteData : { name, ... }
           var indexableSiteDataItem = siteDataForIndexedItem( indexedItem )
 
-          if ( deepEqual( indexedItem._source.doc, indexableSiteDataItem ) ) {
+          if ( deepEqual( indexedItem._source.doc, docFromObj(indexableSiteDataItem) ) ) {
             needsUpdate = false;
           }
           else {
             needsUpdate = true;
             updateObject = {
-              doc: JSON.stringify( indexableSiteDataItem ),
+              doc: docFromObj( indexableSiteDataItem ),
               name: indexableSiteDataItem.name,
               contentType: indexedItem._source.contentType,
               oneOff: indexedItem._source.oneOff,
@@ -212,11 +228,11 @@ function WebHookElasticSearch  ( opts ) {
         }
         var sourceObject = { contentType: item_type }
         if ( item_type === item_id ) {
-          sourceObject.doc = JSON.stringify( siteData.data[ item_type ] )
+          sourceObject.doc = docFromObj( siteData.data[ item_type ] )
           sourceObject.oneOff = true;
           sourceObject.name = siteData.data[ item_type ].name;
         } else {
-          sourceObject.doc = JSON.stringify( siteData.data[ item_type ][ item_id ] )
+          sourceObject.doc = docFromObj( siteData.data[ item_type ][ item_id ] )
           sourceObject.oneOff = false;
           sourceObject.name = siteData.data[ item_type ][ item_id ].name;
         }
@@ -256,6 +272,7 @@ function WebHookElasticSearch  ( opts ) {
   }
 
   function siteEntries ( siteName, callback ) {
+    siteName = unescapeFirebaseStr(siteName)
     var options = {
       index: siteName,
       body: {
@@ -274,4 +291,30 @@ function WebHookElasticSearch  ( opts ) {
 
     } )
   }
+
+  function listIndicies ({
+    verbose = true,
+    sort = 'docs.count:desc',
+    index = '*'
+  } = {}) {
+    return elastic.cat.indices({
+      v: verbose,
+      s: sort,
+      index,
+    })
+  }
+
+  function createIndex ({ index }) {
+    index = unescapeFirebaseStr(index)
+    return elastic.indices.create({ index }) 
+  }
+
+  function deleteIndex ({ index }) {
+    index = unescapeFirebaseStr(index)
+    return elastic.indices.delete({ index })
+  }
+}
+
+function unescapeFirebaseStr (str) {
+  return str.replace(/,1/g, '.')
 }
