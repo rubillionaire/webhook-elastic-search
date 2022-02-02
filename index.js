@@ -1,10 +1,12 @@
-var ElasticSearch = require( 'elasticsearch' )
-var deepEqual = require( 'deep-equal' )
-var objectAssign = require( 'object-assign' )
+var ElasticSearch = require('elasticsearch')
+var deepEqual = require('deep-equal')
 
 module.exports = WebHookElasticSearch;
 
 /**
+ * All elastic interfaces for the webhook platform are
+ * captured within this module.
+ *
  * @param {object} opts
  * @param {string} opts.host
  * @param {string} opts.port
@@ -12,12 +14,12 @@ module.exports = WebHookElasticSearch;
  * @param {string} opts.auth.password
  */
 function WebHookElasticSearch  ( opts ) {
-  if ( ! ( this instanceof WebHookElasticSearch ) ) return new WebHookElasticSearch( opts )
-  if ( !opts ) opts = {}
+  if (!(this instanceof WebHookElasticSearch)) return new WebHookElasticSearch(opts)
+  if (!opts) opts = {}
 
   var options = {
     host: opts.host,
-    apiVersion: '6.6',
+    apiVersion: opts.apiVersion || '6.6',
     httpAuth: `${ opts.auth.username }:${ opts.auth.password }`,
   }
 
@@ -26,41 +28,100 @@ function WebHookElasticSearch  ( opts ) {
   var elastic = new ElasticSearch.Client( options )
 
   return {
-    siteEntries: siteEntries,
-    updateIndex: updateIndex,
+    siteIndex,
+    updateIndex,
+    indexSiteData,
+    listIndicies,
+    createIndex,
+    deleteIndex,
+    queryIndex,
+    deleteDocument,
+    deleteContentType,
+    indexDocument,
   }
 
   /**
-   * @param  {object}   options
-   * @param  {string}   options.siteName
-   * @param  {object}   options.siteData
-   * @param  {object}   options.Index
-   * @param  {Function} callback
+   * Does the input conform to shape like "2017-04-07T14:10:00-04:00"
+   * 
+   * @param  {string}  str [description]
+   * @return {Boolean}     [description]
    */
-  function updateIndex ( options, callback ) {
+  function isDateString (str) {
+    var ISO_8601 = /^\d{4}(-\d\d(-\d\d(T\d\d:\d\d(:\d\d)?(\.\d+)?(([+-]\d\d:\d\d)|Z)?)?)?)?$/i
+    return ISO_8601.test(str)
+  }
 
-    var createActions = CreateActions( options )
-    var updateOrDeleteActions = UpdateOrDeleteActions( options )
+  /**
+   * Prepare an object for storage in elastic by flattening
+   * into a key:value mapping where all values are strings.
+   *
+   * Prefix is used to allow nested objects to be represented by
+   * a compound key string.
+   * 
+   * @param  {object} obj
+   * @param  {String} prefix
+   * @return {object} doc
+   */
+  function docFromObj (obj, prefix='') {
+    let doc = {}
+    Object.keys(obj).forEach((key) => {
+      const doc_key = prefix ? `${prefix}_${key}` : key
+      if (Array.isArray(obj[key])) {
+        obj[key]
+          .map((d, i) => {
+            return docFromObj(d, `${doc_key}_${i}`)
+          })
+          .forEach((tmp) => {
+            doc = Object.assign(doc, tmp)
+          })
+      }
+      else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        // doc[key] = JSON.stringify(obj[key])
+        const tmp = docFromObj(obj[key], doc_key)
+        doc = Object.assign(doc, tmp)
+      }
+      else if (typeof obj[key] === 'number') {
+        return
+      }
+      else if (isDateString(obj[key])) {
+        return
+      }
+      else if (typeof obj[key] === 'boolean') {
+        return
+      }
+      else {
+        doc[doc_key] = obj[key]
+      }
+    })
+    return doc
+  }
 
-    var commands = createActions.concat( updateOrDeleteActions )
-      .reduce( function ( previous, current ) {
+  /**
+   * Use the siteData and siteIndex to determine which objects
+   * need to be stored, updated or deleted.
+   * 
+   * @param  {object} options
+   * @param  {string} options.siteName
+   * @param  {object} options.siteData
+   * @param  {array} options.siteIndex
+   * @return {promise} results | error
+   */
+  function updateIndex (options) {
+
+    var createActions = CreateActions(options)
+    var updateOrDeleteActions = UpdateOrDeleteActions(options)
+
+    var commands = createActions.concat(updateOrDeleteActions)
+      .reduce(function (previous, current) {
         return previous.concat( current )
-      }, [] )
+      },[])
 
-    if ( commands.length === 0 ) return callback( null, [] )
+    if (commands.length === 0) return Promise.resolve([])
 
-    return elastic.bulk( { body: commands, requestTimeout: 120000 }, function ( error, results ) {
-       if ( error ) return callback( error )
-       if ( typeof results === 'string' ) {
-         return callback( null, JSON.parse( results ) )
-       }
-       else {
-         return callback( null, results )
-       }
-    } )
+    return elastic.bulk({ body: commands, requestTimeout: 120000 })
 
     function UpdateOrDeleteActions ( options ) {
-      var siteName = options.siteName;
+      var siteName = unescapeFirebaseStr(options.siteName)
       var siteData = options.siteData;
       var siteIndex = options.siteIndex;
 
@@ -134,13 +195,13 @@ function WebHookElasticSearch  ( opts ) {
           // indexableSiteData : { name, ... }
           var indexableSiteDataItem = siteDataForIndexedItem( indexedItem )
 
-          if ( deepEqual( indexedItem._source.doc, indexableSiteDataItem ) ) {
+          if ( deepEqual( indexedItem._source.doc, docFromObj(indexableSiteDataItem) ) ) {
             needsUpdate = false;
           }
           else {
             needsUpdate = true;
             updateObject = {
-              doc: JSON.stringify( indexableSiteDataItem ),
+              doc: docFromObj( indexableSiteDataItem ),
               name: indexableSiteDataItem.name,
               contentType: indexedItem._source.contentType,
               oneOff: indexedItem._source.oneOff,
@@ -177,7 +238,6 @@ function WebHookElasticSearch  ( opts ) {
           return undefined;
         }
       }
-
     }
 
     function CreateActions ( options ) {
@@ -212,11 +272,11 @@ function WebHookElasticSearch  ( opts ) {
         }
         var sourceObject = { contentType: item_type }
         if ( item_type === item_id ) {
-          sourceObject.doc = JSON.stringify( siteData.data[ item_type ] )
+          sourceObject.doc = docFromObj( siteData.data[ item_type ] )
           sourceObject.oneOff = true;
           sourceObject.name = siteData.data[ item_type ].name;
         } else {
-          sourceObject.doc = JSON.stringify( siteData.data[ item_type ][ item_id ] )
+          sourceObject.doc = docFromObj( siteData.data[ item_type ][ item_id ] )
           sourceObject.oneOff = false;
           sourceObject.name = siteData.data[ item_type ][ item_id ].name;
         }
@@ -255,7 +315,13 @@ function WebHookElasticSearch  ( opts ) {
     }
   }
 
-  function siteEntries ( siteName, callback ) {
+  /**
+   * Given a siteName, return an array of all indexed objects.
+   * 
+   * @param  {string} siteName
+   * @return {promise} results | error
+   */
+  function siteIndex (siteName) {
     var options = {
       index: siteName,
       body: {
@@ -265,13 +331,260 @@ function WebHookElasticSearch  ( opts ) {
         },
       },
     }
+    return new Promise((resolve, reject) => {
+      elastic.search(options, function onResults (error, results) {
+        if ( error ) return reject(error);
 
-    elastic.search( options, function onResults ( error, results ) {
-      if ( error ) return callback( error );
-
-      if ( !results.hits ) callback( null, [] )
-      else callback( null, results.hits.hits )
-
-    } )
+        if ( !results.hits ) resolve([])
+        else resolve(results.hits.hits)
+      })
+    })
   }
+
+  /**
+   * Given a siteName and siteData (a snapshot of all the site's data)
+   * gather the site index entries (this.siteIndex) and execute the
+   * update method (this.updateIndex).
+   * 
+   * @param  {object} options
+   * @param  {string} options.siteName
+   * @param  {object} options.siteData
+   * @return {promise} results | error
+   */
+  function indexSiteData ({ siteName, siteData }) {
+    siteName = unescapeFirebaseStr(siteName)
+
+    const ensureSiteIndexExists = () => {
+      return new Promise((resolve, reject) => {
+        elastic.indices.create({ index: siteName })
+          .then(() => resolve())
+          .catch((error) => {
+            if (error.message.indexOf('exists') > -1) {
+              return resolve()
+            }
+            reject()
+          })
+      })
+    }
+
+    return ensureSiteIndexExists()
+      .then(() => {
+        return siteIndex(siteName)    
+      })
+      .then((siteIndex) => {
+        return updateIndex({ siteName, siteData, siteIndex })
+      })
+  }
+
+  /**
+   * List all indices in the elastic cluster. There should
+   * be one for every webhook site instance on the platform.
+   * 
+   * @param  {object} options
+   * @param  {Boolean} options.verbose
+   * @param  {String} options.sort
+   * @param  {String}  options.index
+   * @return {Promise} rsults:string | error
+   */
+  function listIndicies ({
+    verbose = true,
+    sort = 'docs.count:desc',
+    index = '*'
+  } = {}) {
+    return elastic.cat.indices({
+      v: verbose,
+      s: sort,
+      index,
+    })
+  }
+
+  /**
+   * Creats an index for the given siteName. Must be run
+   * in order to put documents into the index.
+   * 
+   * @param {object} options
+   * @param {string} options.siteName
+   * @return {promise} results | error
+   */
+  function createIndex ({ siteName }) {
+    const index = unescapeFirebaseStr(siteName)
+    return elastic.indices.create({ index }) 
+  }
+
+  /**
+   * Deletes an index for the given siteName.
+   * 
+   * @param {string} options.siteName [description]
+   * @return {promise} results | error
+   */
+  function deleteIndex ({ siteName }) {
+    const index = unescapeFirebaseStr(siteName)
+    return elastic.indices.delete({ index })
+  }
+
+  /**
+   * Query an index and retult results.
+   * 
+   * @param {object} options
+   * @param {string} options.siteName
+   * @param {string} options.query
+   * @param {string} options.contentType
+   * @param {Number} options.page
+   * @param {Number} options.pageSize
+   * @return {promise} results | error
+   */
+  function queryIndex ({
+    siteName,
+    query,
+    contentType,
+    page = 1,
+    pageSize = 10,
+  }) {
+    const index = unescapeFirebaseStr(siteName)
+    page = page < 1 ? 1 : page
+    query = query.startsWith('*') ? query : `*${query}`
+    query = query.endsWith('*') ? query : `${query}*`
+
+    const body = {
+      from: (page - 1) * pageSize,
+      size: pageSize,
+      highlight: {
+        fields: {
+          '*' : {},
+        },
+        encoder: "html",
+      }
+    }
+
+    const baseQuery = {
+      "multi_match": {
+        fields: ["name^5", "doc.*"],
+        type: "phrase_prefix",
+        query,
+      }
+    }
+
+    if (contentType) {
+      body.query = {
+        bool: {
+          must: baseQuery,
+          filter: {
+            term: {
+              contentType,
+            },
+          },
+        },
+      }
+    }
+    else {
+      body.query = baseQuery
+    }
+
+    return new Promise((resolve, reject) => {
+      elastic.search({ index, body })
+        .then((results) => {
+          if (results.hits && results.hits.hits) {
+            return resolve(results.hits.hits.map(prepForCMS))
+          }
+          resolve([])
+        })
+        .catch(reject)
+    })
+
+    function prepForCMS ( result ) {
+      // map our custom type back to the CMS expected `_type` key
+      result._type = result._source.contentType;
+      // map our nested doc.name field to the CMS expected highlight name field
+      result.highlight = {
+        name: result.highlight && result.highlight[ 'name' ]
+          ? result.highlight[ 'name' ]
+          : [ result._source.name ],
+      }
+      result.fields = {
+        name: result._source.name,
+        __oneOff: result._source.oneOff,
+      }
+      return result;
+    }
+  }
+
+  /**
+   * Deletes a single document from an index
+   * using its id.
+   * @param {object} options
+   * @param {string} options.siteName
+   * @param {string} options.id
+   * @return {promise} results | error
+   */
+  function deleteDocument ({ siteName, id }) {
+    const index = unescapeFirebaseStr(siteName)
+    const options = {
+      index,
+      type: globalTypeName,
+      id,
+    }
+    return elastic.delete(options)
+  }
+
+  /**
+   * Delete all documents of a particular content type.
+   * 
+   * @param {object} options.siteName
+   * @param {string} options.siteName
+   * @param {string} options.contentType
+   * @return {promise} results | error
+   */
+  function deleteContentType ({ siteName, contentType }) {
+    const index = unescapeFirebaseStr(siteName)
+    const options = {
+      index,
+      body: {
+        query: {
+          term: {
+            contentType,
+          },
+        },
+      },
+    }
+    return elastic.deleteByQuery(options)
+  }
+
+  /**
+   * Index a single doucment.
+   * 
+   * @param {object}  options
+   * @param {string}  options.siteName
+   * @param {string}  options.contentType
+   * @param {object}  options.doc
+   * @param {string}  options.id
+   * @param {Boolean} options.oneOff
+   * @return {promise} results | error
+   */
+  function indexDocument ({
+    siteName,
+    contentType,
+    doc,
+    id,
+    oneOff = false,
+  }) {
+    const index = unescapeFirebaseStr(siteName)
+    if (typeof doc === 'string') doc = JSON.parse(doc)
+    doc = docFromObj(doc)
+    const options = {
+      index,
+      type: globalTypeName,
+      id,
+      body: {
+        doc,
+        oneOff,
+        contentType,
+        name: doc.name,
+      },
+    }
+    return elastic.index(options)
+  }
+}
+
+function unescapeFirebaseStr (str) {
+  return str.replace(/,1/g, '.')
 }
