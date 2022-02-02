@@ -5,6 +5,9 @@ var objectAssign = require( 'object-assign' )
 module.exports = WebHookElasticSearch;
 
 /**
+ * All elastic interfaces for the webhook platform are
+ * captured within this module.
+ *
  * @param {object} opts
  * @param {string} opts.host
  * @param {string} opts.port
@@ -12,12 +15,12 @@ module.exports = WebHookElasticSearch;
  * @param {string} opts.auth.password
  */
 function WebHookElasticSearch  ( opts ) {
-  if ( ! ( this instanceof WebHookElasticSearch ) ) return new WebHookElasticSearch( opts )
-  if ( !opts ) opts = {}
+  if (!(this instanceof WebHookElasticSearch)) return new WebHookElasticSearch(opts)
+  if (!opts) opts = {}
 
   var options = {
     host: opts.host,
-    apiVersion: '6.6',
+    apiVersion: opts.apiVersion || '6.6',
     httpAuth: `${ opts.auth.username }:${ opts.auth.password }`,
   }
 
@@ -39,7 +42,8 @@ function WebHookElasticSearch  ( opts ) {
   }
 
   /**
-   * does the input conform to shape like "2017-04-07T14:10:00-04:00"
+   * Does the input conform to shape like "2017-04-07T14:10:00-04:00"
+   * 
    * @param  {string}  str [description]
    * @return {Boolean}     [description]
    */
@@ -48,6 +52,17 @@ function WebHookElasticSearch  ( opts ) {
     return ISO_8601.test(str)
   }
 
+  /**
+   * Prepare an object for storage in elastic by flattening
+   * into a key:value mapping where all values are strings.
+   *
+   * Prefix is used to allow nested objects to be represented by
+   * a compound key string.
+   * 
+   * @param  {object} obj
+   * @param  {String} prefix
+   * @return {object} doc
+   */
   function docFromObj (obj, prefix='') {
     let doc = {}
     Object.keys(obj).forEach((key) => {
@@ -83,11 +98,14 @@ function WebHookElasticSearch  ( opts ) {
   }
 
   /**
-   * @param  {object}   options
-   * @param  {string}   options.siteName
-   * @param  {object}   options.siteData
-   * @param  {object}   options.siteIndex
-   * @param  {Function} callback
+   * Use the siteData and siteIndex to determine which objects
+   * need to be stored, updated or deleted.
+   * 
+   * @param  {object} options
+   * @param  {string} options.siteName
+   * @param  {object} options.siteData
+   * @param  {array} options.siteIndex
+   * @return {promise} results | error
    */
   function updateIndex (options) {
 
@@ -101,12 +119,7 @@ function WebHookElasticSearch  ( opts ) {
 
     if (commands.length === 0) return Promise.resolve([])
 
-    return new Promise((resolve, reject) => {
-      elastic.bulk({ body: commands, requestTimeout: 120000 }, function (error, results) {
-         if (error) return reject(error)
-         return resolve(results)
-      })
-    })
+    return elastic.bulk({ body: commands, requestTimeout: 120000 })
 
     function UpdateOrDeleteActions ( options ) {
       var siteName = unescapeFirebaseStr(options.siteName)
@@ -303,6 +316,12 @@ function WebHookElasticSearch  ( opts ) {
     }
   }
 
+  /**
+   * Given a siteName, return an array of all indexed objects.
+   * 
+   * @param  {string} siteName
+   * @return {promise} results | error
+   */
   function siteIndex (siteName) {
     var options = {
       index: siteName,
@@ -323,6 +342,16 @@ function WebHookElasticSearch  ( opts ) {
     })
   }
 
+  /**
+   * Given a siteName and siteData (a snapshot of all the site's data)
+   * gather the site index entries (this.siteIndex) and execute the
+   * update method (this.updateIndex).
+   * 
+   * @param  {object} options
+   * @param  {string} options.siteName
+   * @param  {object} options.siteData
+   * @return {promise} results | error
+   */
   function indexSiteData ({ siteName, siteData }) {
     siteName = unescapeFirebaseStr(siteName)
 
@@ -348,6 +377,16 @@ function WebHookElasticSearch  ( opts ) {
       })
   }
 
+  /**
+   * List all indices in the elastic cluster. There should
+   * be one for every webhook site instance on the platform.
+   * 
+   * @param  {object} options
+   * @param  {Boolean} options.verbose
+   * @param  {String} options.sort
+   * @param  {String}  options.index
+   * @return {Promise} rsults:string | error
+   */
   function listIndicies ({
     verbose = true,
     sort = 'docs.count:desc',
@@ -360,16 +399,41 @@ function WebHookElasticSearch  ( opts ) {
     })
   }
 
+  /**
+   * Creats an index for the given siteName. Must be run
+   * in order to put documents into the index.
+   * 
+   * @param {object} options
+   * @param {string} options.siteName
+   * @return {promise} results | error
+   */
   function createIndex ({ siteName }) {
     const index = unescapeFirebaseStr(siteName)
     return elastic.indices.create({ index }) 
   }
 
+  /**
+   * Deletes an index for the given siteName.
+   * 
+   * @param {string} options.siteName [description]
+   * @return {promise} results | error
+   */
   function deleteIndex ({ siteName }) {
     const index = unescapeFirebaseStr(siteName)
     return elastic.indices.delete({ index })
   }
 
+  /**
+   * Query an index and retult results.
+   * 
+   * @param {object} options
+   * @param {string} options.siteName
+   * @param {string} options.query
+   * @param {string} options.contentType
+   * @param {Number} options.page
+   * @param {Number} options.pageSize
+   * @return {promise} results | error
+   */
   function queryIndex ({
     siteName,
     query,
@@ -445,6 +509,14 @@ function WebHookElasticSearch  ( opts ) {
     }
   }
 
+  /**
+   * Deletes a single document from an index
+   * using its id.
+   * @param {object} options
+   * @param {string} options.siteName
+   * @param {string} options.id
+   * @return {promise} results | error
+   */
   function deleteDocument ({ siteName, id }) {
     const index = unescapeFirebaseStr(siteName)
     const options = {
@@ -455,6 +527,14 @@ function WebHookElasticSearch  ( opts ) {
     return elastic.delete(options)
   }
 
+  /**
+   * Delete all documents of a particular content type.
+   * 
+   * @param {object} options.siteName
+   * @param {string} options.siteName
+   * @param {string} options.contentType
+   * @return {promise} results | error
+   */
   function deleteContentType ({ siteName, contentType }) {
     const index = unescapeFirebaseStr(siteName)
     const options = {
@@ -470,6 +550,17 @@ function WebHookElasticSearch  ( opts ) {
     return elastic.deleteByQuery(options)
   }
 
+  /**
+   * Index a single doucment.
+   * 
+   * @param {object}  options
+   * @param {string}  options.siteName
+   * @param {string}  options.contentType
+   * @param {object}  options.doc
+   * @param {string}  options.id
+   * @param {Boolean} options.oneOff
+   * @return {promise} results | error
+   */
   function indexDocument ({
     siteName,
     contentType,
