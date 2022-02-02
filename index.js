@@ -1,6 +1,5 @@
-var ElasticSearch = require( 'elasticsearch' )
-var deepEqual = require( 'deep-equal' )
-var objectAssign = require( 'object-assign' )
+var ElasticSearch = require('elasticsearch')
+var deepEqual = require('deep-equal')
 
 module.exports = WebHookElasticSearch;
 
