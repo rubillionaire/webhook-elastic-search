@@ -14,12 +14,18 @@
         "wysiwyg_text": "<p>the first page</p>",
         "gallery": [
           {
-            "link_text": "p01g01"
+            "link_text": "gallery item 1",
+            "bloat_number": 13245,
+            "bloat_date": "2017-04-07T14:10:00-04:00"
           },
           {
-            "link_text": "p01g02"
+            "link_text": "gallery item 2"
           }
-        ]
+        ],
+        "webhook_image": {
+          "resize_url": "http://url",
+          "height": 400
+        }
       },
       "-KiHWEClEK5bCCz3KG2e": {
         "_sort_create_date": 1492811820,
@@ -34,10 +40,10 @@
         "wysiwyg_text": "<p>the second page</p>",
         "gallery": [
           {
-            "link_text": "p02g01"
+            "link_text": "gallery item 1"
           },
           {
-            "link_text": "p02g02"
+            "link_text": "gallery item 2"
           }
         ]
       },
@@ -54,10 +60,10 @@
         "wysiwyg_text": "<p>the third page</p>",
         "gallery": [
           {
-            "link_text": "p03g01"
+            "link_text": "gallery item 1"
           },
           {
-            "link_text": "p03g02"
+            "link_text": "gallery item 2"
           }
         ]
       }

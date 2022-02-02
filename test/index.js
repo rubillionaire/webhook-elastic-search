@@ -16,96 +16,225 @@ var elasticOptions = {
 
 const elastic = WebHookElasticSearch(elasticOptions)
 
-const index = 'wh-elastic-test'
+const siteName = 'wh-elastic-test'
+
+// tests occur against live elastic cluster that takes
+// time to become consistent
+const testDelay = 5000
 
 test.onFinish( function () { process.exit() } )
 
-// test( 'setup', function ( t ) {
-
-//   t.plan( 1 )
-
-//   var siteName = process.env.SITE_NAME;
-
-//   elastic.siteEntries( siteName, function ( error, siteIndex ) {
-//     // siteIndex.map(d=>d._source.doc).forEach(d=>console.log(typeof d))
-//     siteIndex.forEach(d=>{
-//       Object.keys(d._source.doc).forEach((k) => {
-//         console.log(typeof d._source.doc[k])
-//       })
-//     })
-//     t.ok(true)
-//     // var updateIndexOptions = {
-//     //   siteName: siteName,
-//     //   siteData: { data: siteData.data, contentType: siteData.contentType },
-//     //   siteIndex: siteIndex,
-//     // }
-
-//     // search.updateIndex( updateIndexOptions, function ( error, results ) {
-
-//     //   if ( error ) console.log( error )
-//     //   else console.log( JSON.stringify( results ) )
-
-//     //   t.ok( true, 'done' )
-//     // } )
-//   } )
-
-// } )
-
 test('list-all-indicies', (t) => {
   t.plan(1)
-  elastic.listIndicies()
-    .then((results) => {
-      t.ok(true, 'successfully retrieved all indicies')
-    })
-    .catch((error) => {
-      t.fail(error, 'failed to retrive all indices')
-    })
+
+  setTimeout(listIndicies, testDelay)
+
+  function listIndicies () {
+    elastic.listIndicies()
+      .then((results) => {
+        t.ok(true, 'successfully retrieved all indicies')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to retrive all indices')
+      })
+  }
 })
 
 test('create-test-index', (t) => {
   t.plan(1)
-  elastic.createIndex({ index })
-    .then((results) => {
-      t.ok(results.acknowledged, 'successfully created test index')
-    })
-    .catch((error) => {
-      t.fail(error, 'failed to create test index')
-    })
+
+  setTimeout(createIndex, testDelay)
+
+  function createIndex () {
+    elastic.createIndex({ siteName })
+      .then((results) => {
+        t.ok(results.acknowledged, 'successfully created test index')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to create test index')
+      })    
+  }
 })
 
-test('create-test-index-already-exists', (t) => [
+test('create-test-index-already-exists', (t) => {
   t.plan(1)
-  elastic.createIndex({ index })
-    .then((results) => {
-      t.fail(results, 'failed to fail creating the test index')
-    })
-    .catch((error) => {
-      t.ok(error.message.indexOf('exists'), 'successfully failed to create test index a second time')
-    })
-])
 
-/* --- make these tests/interfaces --- */
-/* index site using site-backup.json */
-/* query for page results you know exist */
-/* delete one of the results */
-/* query again for smaller set of page results */
-/* delete the page type */
-/* query again and ensure you get nothing back */
-/* index a single item? query for it?
-    this is done on the server, could be nice to have
-    everything elastic related on the server in one place
-    intead of in two modules with separate tasks */
-/* --- notes --- */
-/* may have to add a testDelay to these to ensure results from the
-    previous step propogate out */
+  setTimeout(createIndex, testDelay)
+
+  function createIndex() {
+    elastic.createIndex({ siteName })
+      .then((results) => {
+        t.fail(results, 'failed to fail creating the test index')
+      })
+      .catch((error) => {
+        t.ok(error.message.indexOf('exists'), 'successfully failed to create test index a second time')
+      })    
+  }
+})
+
+test('index-site', (t) => {
+  t.plan(1)
+
+  setTimeout(indexSiteData, testDelay)
+
+  function indexSiteData () {
+    elastic.indexSiteData({ siteName, siteData })
+      .then((results) => {
+        t.ok(results, 'successfully indexed site data')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to index site data')
+      })
+  }
+})
+
+test('query-index-first', (t) => {
+  t.plan(1)
+  setTimeout(queryIndex, 0)
+  function queryIndex () {
+    elastic.queryIndex({
+      siteName,
+      query: 'item',
+      contentType: 'pages',
+    }).then((results) => {
+        t.ok(results.length === 3, 'successfully queried site')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to query site')
+      })
+  }
+})
+
+
+test('delete-document', (t) => {
+  t.plan(1)
+
+  setTimeout(deleteDocument, testDelay)
+
+  function deleteDocument () {
+    elastic.deleteDocument({
+      siteName,
+      id: '-Kh8b6MT7EJxal8GTQuR',
+    }).then((results) => {
+        t.ok(results, 'successfully deleted document')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to delete document')
+      })
+  }
+})
+
+test('query-index-second', (t) => {
+  t.plan(1)
+
+  setTimeout(queryIndex, testDelay)
+
+  function queryIndex () {
+    elastic.queryIndex({
+      siteName,
+      query: 'item',
+      contentType: 'pages',
+    }).then((results) => {
+        t.ok(results.length === 2, 'successfully queried site')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to query site')
+      })
+  }
+})
+
+test('delete-content-type', (t) => {
+  t.plan(1)
+
+  setTimeout(deleteContentType, testDelay)
+
+  function deleteContentType () {
+    elastic.deleteContentType({
+      siteName,
+      contentType: 'pages',
+    }).then((results) => {
+        t.ok(results, 'successfully deleted content type')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to delete content type')
+      })
+  }
+})
+
+test('query-index-third', (t) => {
+  t.plan(1)
+
+  setTimeout(queryIndex, testDelay)
+
+  function queryIndex () {
+    elastic.queryIndex({
+      siteName,
+      query: 'item',
+      contentType: 'pages',
+    }).then((results) => {
+      console.log(results)
+        t.ok(results.length === 0, 'successfully queried site')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to query site')
+      })
+  }
+})
+
+test('index-document', (t) => {
+  t.plan(1)
+
+  const doc = {
+    "name": "freshly indexed page",
+  }
+
+  setTimeout(indexDocument, testDelay)
+
+  function indexDocument () {
+    elastic.indexDocument({
+      siteName,
+      contentType: 'pages',
+      doc,
+      id: '-this-is-an-id',
+      oneOff: false,
+    }).then((results) => {
+        t.ok(results, 'successfully indexed document')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to index document')
+      })
+  }
+})
+
+test('query-index-fourth', (t) => {
+  t.plan(1)
+  setTimeout(queryIndex, testDelay)
+  function queryIndex () {
+    elastic.queryIndex({
+      siteName,
+      query: 'freshly',
+      contentType: 'pages',
+    }).then((results) => {
+        t.ok(results.length === 1, 'successfully queried site')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to query site')
+      })
+  }
+})
 
 test('delete-test-index', (t) => {
   t.plan(1)
-  elastic.deleteIndex({ index })
-    .then((results) => {
-      t.ok(results.acknowledged, 'successfully deleted test index')
-    })
-    .catch((error) => {
-      t.fail(error, 'failed to delete test index')
-    })
+
+  setTimeout(deleteIndex, testDelay)
+
+  function deleteIndex () {
+    elastic.deleteIndex({ siteName })
+      .then((results) => {
+        t.ok(results.acknowledged, 'successfully deleted test index')
+      })
+      .catch((error) => {
+        t.fail(error, 'failed to delete test index')
+      })
+  }
 })
