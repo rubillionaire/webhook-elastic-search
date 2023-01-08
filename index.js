@@ -323,7 +323,7 @@ function WebHookElasticSearch  ( opts ) {
    */
   function siteIndex (siteName) {
     var options = {
-      index: siteName,
+      index: unescapeFirebaseStr(siteName),
       body: {
         size: 10000,
         query: {
