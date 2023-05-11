@@ -554,7 +554,7 @@ function WebHookElasticSearch  ( opts ) {
         doc,
         oneOff,
         contentType,
-        name: doc.name,
+        name,
       },
     }
     return elastic.index(options)
