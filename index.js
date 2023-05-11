@@ -52,48 +52,18 @@ function WebHookElasticSearch  ( opts ) {
   }
 
   /**
-   * Prepare an object for storage in elastic by flattening
-   * into a key:value mapping where all values are strings.
-   *
-   * Prefix is used to allow nested objects to be represented by
-   * a compound key string.
+   * Prepare an object for storage in elastic by stringifying
+   * the object. We were previously flattening all of the keys
+   * into different fields, but on a CMS of sufficient size,
+   * we were running into a max field limit of 1000 fields.
    * 
-   * @param  {object} obj
-   * @param  {String} prefix
-   * @return {object} doc
+   * @param  {object | string} obj
+   * @return {string} doc
    */
-  function docFromObj (obj, prefix='') {
-    let doc = {}
-    Object.keys(obj).forEach((key) => {
-      const doc_key = prefix ? `${prefix}_${key}` : key
-      if (Array.isArray(obj[key])) {
-        obj[key]
-          .map((d, i) => {
-            return docFromObj(d, `${doc_key}_${i}`)
-          })
-          .forEach((tmp) => {
-            doc = Object.assign(doc, tmp)
-          })
-      }
-      else if (typeof obj[key] === 'object' && obj[key] !== null) {
-        // doc[key] = JSON.stringify(obj[key])
-        const tmp = docFromObj(obj[key], doc_key)
-        doc = Object.assign(doc, tmp)
-      }
-      else if (typeof obj[key] === 'number') {
-        return
-      }
-      else if (isDateString(obj[key])) {
-        return
-      }
-      else if (typeof obj[key] === 'boolean') {
-        return
-      }
-      else {
-        doc[doc_key] = obj[key]
-      }
-    })
-    return doc
+  function docFromObj (obj) {
+    if (typeof obj === 'string') return obj
+    if (typeof obj === 'object') return JSON.stringify(obj)
+    return obj
   }
 
   /**
@@ -458,12 +428,11 @@ function WebHookElasticSearch  ( opts ) {
 
     const baseQuery = {
       "multi_match": {
-        fields: ["name^5", "doc.*"],
+        fields: ["name^5", "doc"],
         type: "phrase_prefix",
         query,
       }
     }
-
     if (contentType) {
       body.query = {
         bool: {
@@ -568,8 +537,15 @@ function WebHookElasticSearch  ( opts ) {
     oneOff = false,
   }) {
     const index = unescapeFirebaseStr(siteName)
-    if (typeof doc === 'string') doc = JSON.parse(doc)
-    doc = docFromObj(doc)
+    let name
+    if (typeof doc === 'object') {
+      name = doc.name
+      doc = JSON.stringify(doc)
+    }
+    if (typeof doc === 'string') {
+      const _doc = JSON.parse(doc)
+      name = _doc.name
+    }
     const options = {
       index,
       type: globalTypeName,
