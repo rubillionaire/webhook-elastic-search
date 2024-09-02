@@ -8,10 +8,11 @@ module.exports = WebHookElasticSearch;
  * captured within this module.
  *
  * @param {object} opts
- * @param {string} opts.host
- * @param {string} opts.port
+ * @param {string} opts.node
  * @param {string} opts.auth.username
  * @param {string} opts.auth.password
+ * @param {string} opts.tls.ca
+ * @param {boolean} opts.tls.rejectUnauthorized
  */
 function WebHookElasticSearch  ( opts ) {
   if (!(this instanceof WebHookElasticSearch)) return new WebHookElasticSearch(opts)
