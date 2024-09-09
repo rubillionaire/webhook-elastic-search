@@ -8,10 +8,9 @@ Example:
 
 ```
 var elasticOptions = {
-  host: elasticHost,
+  node: elasticNode,
   auth: {
-    username: elasticUsername,
-    password: elasticPassword,
+    apiKey: elasticApiKey,
   },
 }
 
