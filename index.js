@@ -1,4 +1,4 @@
-var ElasticSearch = require('elasticsearch')
+const { Client } = require('@elastic/elasticsearch')
 var deepEqual = require('deep-equal')
 
 module.exports = WebHookElasticSearch;
@@ -7,30 +7,26 @@ module.exports = WebHookElasticSearch;
  * All elastic interfaces for the webhook platform are
  * captured within this module.
  *
+ * The `opts` here are passed directly into the elasitc Client, documented here:
+ * https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/basic-config.html
+ *
  * @param {object} opts
- * @param {string} opts.host
- * @param {string} opts.port
+ * @param {string} opts.node
  * @param {string} opts.auth.username
  * @param {string} opts.auth.password
+ * @param {string} opts.tls?.ca
+ * @param {boolean} opts.tls?.rejectUnauthorized
  */
 function WebHookElasticSearch  ( opts ) {
   if (!(this instanceof WebHookElasticSearch)) return new WebHookElasticSearch(opts)
   if (!opts) opts = {}
 
-  var options = {
-    host: opts.host,
-    apiVersion: opts.apiVersion || '6.6',
-    httpAuth: `${ opts.auth.username }:${ opts.auth.password }`,
-  }
-
-  var globalTypeName = '_doc'
-
-  var elastic = new ElasticSearch.Client( options )
+  var elastic = new Client( opts )
 
   return {
     siteIndex,
     updateIndex,
-    indexSiteData,
+    indexCmsData,
     listIndicies,
     createIndex,
     deleteIndex,
@@ -72,12 +68,11 @@ function WebHookElasticSearch  ( opts ) {
    * 
    * @param  {object} options
    * @param  {string} options.siteName
-   * @param  {object} options.siteData
-   * @param  {array} options.siteIndex
+   * @param  {object} options.cmsData
+   * @param  {array} options.elasticData
    * @return {promise} results | error
    */
   function updateIndex (options) {
-
     var createActions = CreateActions(options)
     var updateOrDeleteActions = UpdateOrDeleteActions(options)
 
@@ -86,28 +81,28 @@ function WebHookElasticSearch  ( opts ) {
         return previous.concat( current )
       },[])
 
-    if (commands.length === 0) return Promise.resolve([])
+    if (commands.length === 0) return []
 
-    return elastic.bulk({ body: commands, requestTimeout: 120000 })
+    return elastic.bulk({ body: commands })
 
     function UpdateOrDeleteActions ( options ) {
       var siteName = unescapeFirebaseStr(options.siteName)
-      var siteData = options.siteData;
-      var siteIndex = options.siteIndex;
+      var cmsData = options.cmsData;
+      var elasticData = options.elasticData;
 
       var bulkActions = []
 
       // Delete / Update from site index
-      for (var i = siteIndex.length - 1; i >= 0; i--) {
-        var deletor = DeletorForIndexedItem( siteIndex[ i ] )
-        // If the item is in the siteIndex, but not the siteData
+      for (var i = elasticData.length - 1; i >= 0; i--) {
+        var deletor = DeletorForIndexedItem( elasticData[ i ] )
+        // If the item is in the elasticData, but not the siteData
         if ( deletor.check() ) {
           // delete the indexed item if it is not in the site's data object
           bulkActions.push( deletor.action() )
           continue;
         }
 
-        var updator = UpdateForIndexedItem( siteIndex[ i ] )
+        var updator = UpdateForIndexedItem( elasticData[ i ] )
         if ( updator.check() ) {
           bulkActions.push( updator.action() )
           continue;
@@ -134,7 +129,6 @@ function WebHookElasticSearch  ( opts ) {
           return [{
             'delete': {
               '_index': indexedItem._index,
-              '_type': indexedItem._type,
               '_id': indexedItem._id,
             }
           }]
@@ -188,7 +182,6 @@ function WebHookElasticSearch  ( opts ) {
           var indexCommand = {
             'index': {
               '_index': indexedItem._index,
-              '_type': globalTypeName,
               '_id': indexedItem._id,
             },
           }
@@ -212,14 +205,14 @@ function WebHookElasticSearch  ( opts ) {
 
     function CreateActions ( options ) {
       var siteName = options.siteName;
-      var siteData = options.siteData;
-      var siteIndex = options.siteIndex;
+      var cmsData = options.cmsData;
+      var elasticData = options.elasticData;
 
       var keySeperator = '!';
 
-      // siteData & siteIndex as arrays of contentType!id strings
-      var siteDataKeys = keysForSiteData( siteData )
-      var siteIndexKeys = keysForSiteIndex( siteIndex )
+      // cmsData & elasticData as arrays of contentType!id strings
+      var siteDataKeys = keysForCmsData( cmsData )
+      var siteIndexKeys = keysForElasticData( elasticData )
 
       var actions = []
       for (var i = siteDataKeys.length - 1; i >= 0; i--) {
@@ -236,32 +229,31 @@ function WebHookElasticSearch  ( opts ) {
         var createCommand = {
           'index': {
             '_index': siteName,
-            '_type': globalTypeName,
             '_id': item_id,
           }
         }
         var sourceObject = { contentType: item_type }
         if ( item_type === item_id ) {
-          sourceObject.doc = docFromObj( siteData.data[ item_type ] )
+          sourceObject.doc = docFromObj( cmsData.data[ item_type ] )
           sourceObject.oneOff = true;
-          sourceObject.name = siteData.data[ item_type ].name;
+          sourceObject.name = cmsData.data[ item_type ].name;
         } else {
-          sourceObject.doc = docFromObj( siteData.data[ item_type ][ item_id ] )
+          sourceObject.doc = docFromObj( cmsData.data[ item_type ][ item_id ] )
           sourceObject.oneOff = false;
-          sourceObject.name = siteData.data[ item_type ][ item_id ].name;
+          sourceObject.name = cmsData.data[ item_type ][ item_id ].name;
         }
 
         return [ createCommand, sourceObject ];
       }
 
-      function keysForSiteData( siteData ) {
+      function keysForCmsData( cmsData ) {
         var keys = []
-        Object.keys( siteData.data ).forEach( function ( contentType ) {
+        Object.keys( cmsData.data ).forEach( function ( contentType ) {
 
-          if ( siteData.contentType[ contentType ].oneOff ) {
+          if ( cmsData.contentType[ contentType ].oneOff ) {
             keys.push( keyForContentTypeItemId( contentType, contentType ) )
           } else {
-            Object.keys( siteData.data[ contentType ] ).forEach( function ( itemId ) {
+            Object.keys( cmsData.data[ contentType ] ).forEach( function ( itemId ) {
               keys.push( keyForContentTypeItemId( contentType, itemId ) )
             } )
           }
@@ -271,8 +263,8 @@ function WebHookElasticSearch  ( opts ) {
         return keys;
       }
 
-      function keysForSiteIndex ( siteIndex ) {
-        return siteIndex.map( keyForIndexedItem )
+      function keysForElasticData ( elasticData ) {
+        return elasticData.map( keyForIndexedItem )
       }
 
       function keyForIndexedItem ( indexedItem ) {
@@ -291,7 +283,7 @@ function WebHookElasticSearch  ( opts ) {
    * @param  {string} siteName
    * @return {promise} results | error
    */
-  function siteIndex (siteName) {
+  async function siteIndex (siteName) {
     var options = {
       index: unescapeFirebaseStr(siteName),
       body: {
@@ -301,49 +293,43 @@ function WebHookElasticSearch  ( opts ) {
         },
       },
     }
-    return new Promise((resolve, reject) => {
-      elastic.search(options, function onResults (error, results) {
-        if ( error ) return reject(error);
-
-        if ( !results.hits ) resolve([])
-        else resolve(results.hits.hits)
-      })
-    })
+    try {
+      const results = await elastic.search(options)
+      return results.hits.hits
+    }
+    catch (error) {
+      console.log({error})
+      return []
+    }
   }
 
   /**
-   * Given a siteName and siteData (a snapshot of all the site's data)
+   * Given a siteName and cmsData (a snapshot of all the site's data)
    * gather the site index entries (this.siteIndex) and execute the
    * update method (this.updateIndex).
    * 
    * @param  {object} options
    * @param  {string} options.siteName
-   * @param  {object} options.siteData
+   * @param  {object} options.cmsData
    * @return {promise} results | error
    */
-  function indexSiteData ({ siteName, siteData }) {
+  async function indexCmsData ({ siteName, cmsData }) {
     siteName = unescapeFirebaseStr(siteName)
 
-    const ensureSiteIndexExists = () => {
-      return new Promise((resolve, reject) => {
-        elastic.indices.create({ index: siteName })
-          .then(() => resolve())
-          .catch((error) => {
-            if (error.message.indexOf('exists') > -1) {
-              return resolve()
-            }
-            reject()
-          })
-      })
+    try {
+      await createIndex({ siteName })
+    }
+    catch (error) {
+      if (error.message.indexOf('exists') > -1) {
+        // continue
+      }
+      else {
+        throw error
+      }
     }
 
-    return ensureSiteIndexExists()
-      .then(() => {
-        return siteIndex(siteName)    
-      })
-      .then((siteIndex) => {
-        return updateIndex({ siteName, siteData, siteIndex })
-      })
+    const elasticData = await siteIndex(siteName)
+    return updateIndex({ siteName, cmsData, elasticData })
   }
 
   /**
@@ -357,13 +343,9 @@ function WebHookElasticSearch  ( opts ) {
    * @return {Promise} rsults:string | error
    */
   function listIndicies ({
-    verbose = true,
-    sort = 'docs.count:desc',
     index = '*'
   } = {}) {
     return elastic.cat.indices({
-      v: verbose,
-      s: sort,
       index,
     })
   }
@@ -489,7 +471,6 @@ function WebHookElasticSearch  ( opts ) {
     const index = unescapeFirebaseStr(siteName)
     const options = {
       index,
-      type: globalTypeName,
       id,
     }
     return elastic.delete(options)
@@ -548,7 +529,6 @@ function WebHookElasticSearch  ( opts ) {
     }
     const options = {
       index,
-      type: globalTypeName,
       id,
       body: {
         doc,

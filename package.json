@@ -1,18 +1,19 @@
 {
   "name": "webhook-elastic-search",
-  "version": "3.0.3",
+  "version": "4.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tape test/**/*.js"
+    "test": "brittle test/**/*.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "deep-equal": "^1.0.1",
-    "elasticsearch": "^15.3.1"
+    "@elastic/elasticsearch": "^8.14.0",
+    "deep-equal": "^1.0.1"
   },
   "devDependencies": {
+    "brittle": "^3.6.1",
     "dotenv": "^4.0.0",
     "tape": "^4.6.3"
   }
