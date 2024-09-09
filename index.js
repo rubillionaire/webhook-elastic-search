@@ -7,12 +7,15 @@ module.exports = WebHookElasticSearch;
  * All elastic interfaces for the webhook platform are
  * captured within this module.
  *
+ * The `opts` here are passed directly into the elasitc Client, documented here:
+ * https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/basic-config.html
+ *
  * @param {object} opts
  * @param {string} opts.node
  * @param {string} opts.auth.username
  * @param {string} opts.auth.password
- * @param {string} opts.tls.ca
- * @param {boolean} opts.tls.rejectUnauthorized
+ * @param {string} opts.tls?.ca
+ * @param {boolean} opts.tls?.rejectUnauthorized
  */
 function WebHookElasticSearch  ( opts ) {
   if (!(this instanceof WebHookElasticSearch)) return new WebHookElasticSearch(opts)
