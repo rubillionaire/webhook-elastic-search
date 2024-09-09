@@ -12,8 +12,9 @@ module.exports = WebHookElasticSearch;
  *
  * @param {object} opts
  * @param {string} opts.node
- * @param {string} opts.auth.username
- * @param {string} opts.auth.password
+ * @param {string} opts.auth.apiKey?
+ * @param {string} opts.auth.username?
+ * @param {string} opts.auth.password?
  * @param {string} opts.tls?.ca
  * @param {boolean} opts.tls?.rejectUnauthorized
  */
