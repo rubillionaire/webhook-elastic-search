@@ -25,7 +25,7 @@ const siteName = 'wh-elastic-test'
 // tests occur against live elastic cluster that takes
 // time to become consistent
 const delayed = function (p) {
-  const testDelay = 8_000
+  const testDelay = 10_000
   return new Promise((resolve) => {
     setTimeout(resolve, testDelay)
   })
